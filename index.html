@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cumplimiento de promesa Flapp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --ink:#1B2430; --muted:#5D6B7A; --line:#D3D9E0;
+  --ok:#1F7A68; --late:#B83A2B; --zero:#2B4C7E; --soft:#F6F8FA;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161D; --surface:#18212B; --ink:#E6EBF0; --muted:#93A1B0; --line:#2A3540;
+    --ok:#4FB8A0; --late:#E06A57; --zero:#7FA2D9; --soft:#1D2733;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10161D; --surface:#18212B; --ink:#E6EBF0; --muted:#93A1B0; --line:#2A3540;
+  --ok:#4FB8A0; --late:#E06A57; --zero:#7FA2D9; --soft:#1D2733;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:16px; line-height:1.5; font-variant-numeric:tabular-nums;
+}
+.wrap{max-width:1120px;margin:0 auto;padding:40px 24px 64px}
+h1{font-size:2.25rem;line-height:1.1;font-weight:800;font-stretch:80%;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:1.25rem;font-weight:700;font-stretch:85%;margin:0 0 4px}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:.875rem}
+
+/* Carga de archivos */
+.loaders{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:28px 0 36px}
+.drop{
+  position:relative;display:block;background:var(--surface);border:1.5px dashed var(--line);
+  border-radius:10px;padding:18px 20px;cursor:pointer;transition:border-color .15s
+}
+.drop:hover,.drop.over{border-color:var(--zero)}
+.drop.loaded{border-style:solid;border-color:var(--ok)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.drop:focus-within{outline:2px solid var(--zero);outline-offset:2px}
+.drop strong{display:block;font-size:1.05rem}
+.drop .status{margin-top:8px;font-size:.875rem;color:var(--muted)}
+.drop.loaded .status{color:var(--ok)}
+.error{background:color-mix(in srgb,var(--late) 12%,var(--surface));border-left:3px solid var(--late);padding:12px 16px;border-radius:6px;margin:-16px 0 28px}
+
+/* Resumen global */
+.headline{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap;padding:8px 0 28px;border-bottom:1px solid var(--line)}
+.big{font-size:4.5rem;line-height:1;font-weight:800;font-stretch:75%}
+.headline p{max-width:46ch;font-size:1.125rem}
+.excluded{margin-top:12px;font-size:.875rem;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:24px}
+.kpi{background:var(--surface);padding:14px 16px}
+.kpi .v{font-size:1.9rem;font-weight:800;font-stretch:75%;line-height:1.1}
+.kpi .l{font-size:.85rem;color:var(--muted)}
+.kpi.ok .v{color:var(--ok)} .kpi.late .v{color:var(--late)}
+.summary{margin-top:40px}
+.summary table{min-width:760px}
+.summary td.num,.summary th.num{text-align:right}
+.summary tfoot td{font-weight:700;background:var(--soft);border-top:1px solid var(--line);border-bottom:0}
+.bar{display:inline-block;vertical-align:middle;width:70px;height:6px;border-radius:3px;background:color-mix(in srgb,var(--late) 30%,var(--surface));margin-right:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+
+/* Tiendas */
+.stores{margin-top:32px}
+.grid{display:grid;grid-template-columns:250px 96px 1fr;column-gap:20px;align-items:center}
+.axis{position:relative;height:22px;font-size:.75rem;color:var(--muted)}
+.axis span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.axis span:last-child{transform:translateX(-100%)}
+.axis span:first-child{transform:none}
+.store{padding:16px 0;border-bottom:1px solid var(--line)}
+.store .name{font-weight:700}
+.store .pct{font-size:2rem;font-weight:800;font-stretch:75%;line-height:1}
+.store .pct.none{font-size:1rem;font-weight:500;color:var(--muted)}
+.strip{position:relative;height:40px;background:var(--soft);border-radius:6px}
+.strip .tick{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.strip .zero{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--zero);transform:translateX(-1px)}
+.dot{
+  position:absolute;top:50%;width:13px;height:13px;border-radius:50%;
+  transform:translate(-50%,-50%);border:2px solid var(--surface);cursor:default
+}
+.dot.ok{background:var(--ok)} .dot.late{background:var(--late)}
+.dot.clamped{box-shadow:0 0 0 2px var(--late)}
+.stats{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:4px 24px;margin-top:10px;font-size:.875rem;color:var(--muted)}
+.stats b{color:var(--ink);font-weight:600}
+.legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;font-size:.875rem;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+
+/* Detalle */
+.detail{margin-top:48px}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:14px 0}
+.controls label{display:flex;flex-direction:column;font-size:.8rem;color:var(--muted);gap:4px}
+select,button{
+  font:inherit;font-size:.9rem;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-radius:6px;padding:7px 10px
+}
+button{cursor:pointer;font-weight:600}
+button:hover{border-color:var(--zero)}
+select:focus-visible,button:focus-visible{outline:2px solid var(--zero);outline-offset:1px}
+.tablebox{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.875rem;min-width:860px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:600;color:var(--muted);background:var(--soft);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.num{text-align:right}
+.tag{font-weight:600}
+.tag.ok{color:var(--ok)} .tag.late{color:var(--late)} .tag.ex{color:var(--muted);font-weight:500}
+a{color:var(--zero)}
+.empty{padding:40px 0;color:var(--muted);max-width:60ch}
+.empty ol{padding-left:20px}
+footer{margin-top:40px;font-size:.8rem;color:var(--muted)}
+
+@media (max-width:760px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .kpi:first-child{grid-column:1 / -1}
+  .wrap{padding:28px 16px 48px}
+  h1{font-size:1.8rem}
+  .loaders{grid-template-columns:1fr}
+  .big{font-size:3.5rem}
+  .grid{grid-template-columns:1fr auto;row-gap:10px}
+  .grid .strip,.grid .axis{grid-column:1 / -1}
+  .axis-row .spacer{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cumplimiento de promesa Flapp</h1>
+  <p class="muted" id="period">Compara la hora que vio el cliente al comprar con la hora real de entrega, por tienda.</p>
+
+  <div class="loaders">
+    <label class="drop" id="drop-flapp">
+      <input type="file" id="in-flapp" accept=".csv,.xlsx,.xls" multiple>
+      <strong>Reporte Flapp</strong>
+      <span class="small muted">Export de órdenes desde Flapp (.csv o .xlsx)</span>
+      <div class="status">Arrastra el archivo o haz clic para elegirlo</div>
+    </label>
+    <label class="drop" id="drop-util">
+      <input type="file" id="in-util" accept=".xlsx,.xls,.csv" multiple>
+      <strong>Reporte utilitario</strong>
+      <span class="small muted">Export de pedidos con hoja Resumen (puedes cargar varias marcas)</span>
+      <div class="status">Arrastra el archivo o haz clic para elegirlo</div>
+    </label>
+  </div>
+
+  <div id="error" class="error" hidden></div>
+
+  <div id="empty" class="empty">
+    <p>Carga los dos archivos para ver el reporte. Así se cruzan:</p>
+    <ol>
+      <li>Del reporte Flapp se usan <b>Código</b>, <b>Tienda</b>, <b>Estado</b> y <b>Fecha Entrega</b>. La columna Promesa de Flapp no se usa.</li>
+      <li>Del reporte utilitario (hoja Resumen) se usan <b>oracle_id</b>, <b>order_date</b> y <b>shipping_description</b>.</li>
+      <li>Solo cuentan los pedidos cuyo despacho dice “Pide ahora y recibe…”. La promesa es la fecha de order_date (un día más si dice “mañana”) a la hora de “antes de las HH:MM”.</li>
+    </ol>
+    <p style="margin-top:12px">Los archivos se procesan en tu navegador y no se suben a ningún servidor.</p>
+  </div>
+
+  <div id="report" hidden>
+    <section class="headline">
+      <div class="big" id="g-pct"></div>
+      <p id="g-text"></p>
+    </section>
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="k-total"></div><div class="l">Pedidos en Flapp</div></div>
+      <div class="kpi"><div class="v" id="k-med"></div><div class="l">Pedidos medidos</div></div>
+      <div class="kpi ok"><div class="v" id="k-ok"></div><div class="l">A tiempo</div></div>
+      <div class="kpi late"><div class="v" id="k-late"></div><div class="l">Atrasados</div></div>
+      <div class="kpi"><div class="v" id="k-ex"></div><div class="l">Excluidos</div></div>
+    </div>
+    <p class="excluded" id="g-excluded"></p>
+
+    <section class="summary">
+      <h2>Resumen por tienda</h2>
+      <p class="small muted">Pedidos medidos = pedidos con promesa “Pide ahora” y resultado conocido. Excluidos = cancelados, en curso o sin cruce con el utilitario.</p>
+      <div class="tablebox" style="margin-top:14px">
+        <table>
+          <thead><tr>
+            <th>Tienda</th><th class="num">Pedidos</th><th class="num">Medidos</th><th class="num">A tiempo</th>
+            <th class="num">Atrasados</th><th>% cumplimiento</th><th class="num">Atraso mediano</th>
+            <th class="num">Toma en tienda</th><th class="num">Excluidos</th>
+          </tr></thead>
+          <tbody id="sum-rows"></tbody>
+          <tfoot id="sum-foot"></tfoot>
+        </table>
+      </div>
+    </section>
+
+    <section class="stores" style="margin-top:40px">
+      <h2>Distribución de atrasos por tienda</h2>
+      <p class="small muted">Cada punto es un pedido. A la izquierda de la línea azul llegó antes de la hora prometida; a la derecha, después.</p>
+      <div class="grid axis-row" style="margin-top:18px">
+        <div class="spacer"></div><div class="spacer"></div>
+        <div class="axis" id="axis"></div>
+      </div>
+      <div id="stores"></div>
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>A tiempo</span>
+        <span><i style="background:var(--late)"></i>Atrasado</span>
+        <span><i style="background:var(--late);box-shadow:0 0 0 2px var(--late);border:2px solid var(--surface)"></i>Más de 24 h tarde</span>
+      </div>
+    </section>
+
+    <section class="detail">
+      <h2>Detalle de pedidos</h2>
+      <div class="controls">
+        <label>Tienda<select id="f-store"></select></label>
+        <label>Resultado<select id="f-status">
+          <option value="all">Todos</option>
+          <option value="ok">A tiempo</option>
+          <option value="late">Atrasados</option>
+          <option value="ex">Excluidos</option>
+        </select></label>
+        <button id="export" type="button">Descargar CSV</button>
+      </div>
+      <div class="tablebox">
+        <table>
+          <thead><tr>
+            <th>Pedido</th><th>Tienda</th><th>Comuna</th><th>Compra</th><th>Creado en Flapp</th>
+            <th>Promesa</th><th>Entrega</th><th class="num">Diferencia</th><th>Resultado</th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer>“Toma en tienda” es el tiempo entre la compra en el sitio y la creación de la orden en Flapp. Se calcula solo con pedidos de promesa “hoy”, porque los de “mañana” se compran de noche y esperan a la apertura.</footer>
+</div>
+
+<script>
+(() => {
+  const state = { flapp: null, util: null, flappNames: [], utilNames: [], results: [] };
+
+  // ---------- utilidades ----------
+  const norm = s => String(s ?? '').replace(/^\uFEFF/, '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+  function getter(rows) {
+    const keys = rows.length ? Object.keys(rows[0]) : [];
+    const map = {};
+    keys.forEach(k => { map[norm(k)] = k; });
+    return (row, ...names) => {
+      for (const n of names) { const k = map[n]; if (k !== undefined) return row[k]; }
+      return undefined;
+    };
+  }
+  const hasCol = (rows, name) => rows.length && Object.keys(rows[0]).some(k => norm(k) === name);
+
+  const toCode = v => {
+    if (v === null || v === undefined || v === '') return '';
+    if (typeof v === 'number') return v.toFixed(0);
+    return String(v).trim().replace(/\.0+$/, '');
+  };
+
+  const MONTHS = {jan:0,ene:0,feb:1,mar:2,apr:3,abr:3,may:4,jun:5,jul:6,aug:7,ago:7,sep:8,set:8,oct:9,nov:10,dec:11,dic:11};
+
+  // Todas las fechas se manejan como hora local "ingenua" (ms en UTC sin zona) para evitar desfases.
+  function parseDate(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') return Math.round((v - 25569) * 86400) * 1000;
+    if (v instanceof Date) return Date.UTC(v.getFullYear(), v.getMonth(), v.getDate(), v.getHours(), v.getMinutes(), v.getSeconds());
+    const s = String(v).trim();
+    let m = /([A-Za-zÁÉÍÓÚáéíóú]+)\.?\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i.exec(s);
+    if (m) {
+      const mon = MONTHS[norm(m[1]).slice(0, 3)];
+      if (mon !== undefined) {
+        let h = +m[4];
+        if (m[7]) { const pm = m[7].toUpperCase() === 'PM'; if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0; }
+        return Date.UTC(+m[3], mon, +m[2], h, +m[5], +(m[6] || 0));
+      }
+    }
+    m = /(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+    m = /(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(s);
+    if (m) return Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0));
+    return null;
+  }
+
+  function promiseFrom(orderMs, desc) {
+    const m = /antes de las\s*(\d{1,2})[:.](\d{2})/i.exec(desc);
+    if (!m || orderMs === null) return null;
+    const plusOne = /recibe\s+ma(n|ñ)ana/i.test(desc) ? 1 : 0;
+    const d = new Date(orderMs);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + plusOne, +m[1], +m[2]);
+  }
+
+  const pad = n => String(n).padStart(2, '0');
+  const fmtDT = ms => {
+    if (ms === null || ms === undefined) return '—';
+    const d = new Date(ms);
+    return `${pad(d.getUTCDate())}-${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  };
+  const fmtDay = ms => { const d = new Date(ms); return `${pad(d.getUTCDate())}-${pad(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`; };
+  function fmtDur(min, signed) {
+    if (min === null || min === undefined || isNaN(min)) return '—';
+    const sign = min < 0 ? '−' : (signed ? '+' : '');
+    let a = Math.round(Math.abs(min));
+    if (a < 60) return `${sign}${a} min`;
+    const d = Math.floor(a / 1440); a -= d * 1440;
+    const h = Math.floor(a / 60), mm = a % 60;
+    if (d) return `${sign}${d} d ${h} h`;
+    return `${sign}${h} h${mm ? ' ' + mm + ' min' : ''}`;
+  }
+  const median = arr => {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b), i = Math.floor(s.length / 2);
+    return s.length % 2 ? s[i] : (s[i - 1] + s[i]) / 2;
+  };
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // ---------- lectura de archivos ----------
+  async function readTable(file, preferSheet) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.csv')) {
+      const text = (await file.text()).replace(/^\uFEFF/, '');
+      return Papa.parse(text, { header: true, skipEmptyLines: true }).data;
+    }
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const sheet = wb.SheetNames.find(n => norm(n) === preferSheet) || wb.SheetNames[0];
+    return XLSX.utils.sheet_to_json(wb.Sheets[sheet], { raw: true, defval: null });
+  }
+
+  async function loadFiles(kind, files) {
+    const box = document.getElementById(kind === 'flapp' ? 'drop-flapp' : 'drop-util');
+    const status = box.querySelector('.status');
+    hideError();
+    try {
+      let rows = [];
+      for (const f of files) rows = rows.concat(await readTable(f, kind === 'flapp' ? '' : 'resumen'));
+      const needed = kind === 'flapp' ? ['codigo', 'tienda', 'fecha entrega'] : ['oracle_id', 'order_date', 'shipping_description'];
+      const missing = needed.filter(c => !hasCol(rows, c));
+      if (missing.length) {
+        throw new Error(kind === 'flapp'
+          ? `El reporte Flapp no tiene ${missing.map(c => '“' + c + '”').join(', ')}. Usa el export de órdenes de Flapp.`
+          : `El reporte utilitario no tiene ${missing.map(c => '“' + c + '”').join(', ')}. Revisa que el archivo tenga la hoja Resumen.`);
+      }
+      state[kind] = rows;
+      state[kind + 'Names'] = [...files].map(f => f.name);
+      box.classList.add('loaded');
+      status.textContent = `${files.length > 1 ? files.length + ' archivos, ' : ''}${rows.length} filas cargadas`;
+      box.title = state[kind + 'Names'].join('\n');
+      if (state.flapp && state.util) build();
+    } catch (e) {
+      state[kind] = null;
+      box.classList.remove('loaded');
+      status.textContent = 'Arrastra el archivo o haz clic para elegirlo';
+      showError(e.message || 'No se pudo leer el archivo.');
+    }
+  }
+
+  function showError(msg) { const el = document.getElementById('error'); el.textContent = msg; el.hidden = false; }
+  function hideError() { document.getElementById('error').hidden = true; }
+
+  // ---------- cruce y cálculo ----------
+  function build() {
+    const gu = getter(state.util);
+    const util = new Map();
+    for (const r of state.util) {
+      const code = toCode(gu(r, 'oracle_id'));
+      if (code && !util.has(code)) {
+        util.set(code, { orderMs: parseDate(gu(r, 'order_date')), desc: String(gu(r, 'shipping_description') ?? '').trim() });
+      }
+    }
+
+    const gf = getter(state.flapp);
+    const n = new Date();
+    const nowMs = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate(), n.getHours(), n.getMinutes());
+
+    const out = [];
+    for (const r of state.flapp) {
+      const code = toCode(gf(r, 'codigo'));
+      if (!code) continue;
+      const row = {
+        code,
+        url: gf(r, 'orden') || '',
+        store: String(gf(r, 'tienda') || 'Sin tienda').trim(),
+        comuna: gf(r, 'comuna') || '',
+        estado: String(gf(r, 'estado') || '').trim(),
+        motivo: gf(r, 'motivo cancelacion') || '',
+        created: parseDate(gf(r, 'fecha creacion')),
+        delivered: parseDate(gf(r, 'fecha entrega')),
+        orderMs: null, promise: null, desc: '', diff: null, toma: null, result: 'ex', reason: ''
+      };
+      const u = util.get(code);
+      if (u) {
+        row.orderMs = u.orderMs; row.desc = u.desc;
+        if (row.created !== null && u.orderMs !== null) row.toma = (row.created - u.orderMs) / 60000;
+      }
+      if (!u) row.reason = 'No está en el reporte utilitario';
+      else if (!norm(u.desc).startsWith('pide ahora')) row.reason = `Sin promesa “Pide ahora” (${u.desc || 'sin despacho'})`;
+      else if ((row.promise = promiseFrom(u.orderMs, u.desc)) === null) row.reason = 'No se pudo leer la hora prometida';
+      else if (norm(row.estado).includes('cancel')) row.reason = 'Cancelado' + (row.motivo ? ': ' + row.motivo : '');
+      else if (row.delivered !== null) {
+        row.diff = (row.delivered - row.promise) / 60000;
+        row.result = row.diff <= 0 ? 'ok' : 'late';
+      } else if (row.promise < nowMs) {
+        row.diff = (nowMs - row.promise) / 60000;
+        row.result = 'late'; row.reason = 'Sin entregar y la promesa ya venció';
+      } else row.reason = 'En curso';
+      out.push(row);
+    }
+    state.results = out;
+    render();
+  }
+
+  // escala: raíz con signo, de −6 h a +24 h
+  const MIN_D = -360, MAX_D = 1440;
+  const f = d => Math.sign(d) * Math.sqrt(Math.abs(d));
+  const xPct = d => {
+    const c = Math.max(MIN_D, Math.min(MAX_D, d));
+    return ((f(c) - f(MIN_D)) / (f(MAX_D) - f(MIN_D))) * 100;
+  };
+  const TICKS = [[-240, '−4 h'], [-60, '−1 h'], [0, '0'], [60, '+1 h'], [240, '+4 h'], [720, '+12 h'], [1440, '+24 h']];
+
+  function render() {
+    const res = state.results;
+    const evals = res.filter(r => r.result !== 'ex');
+    const ok = evals.filter(r => r.result === 'ok').length;
+    const ex = res.filter(r => r.result === 'ex');
+
+    document.getElementById('empty').hidden = true;
+    document.getElementById('report').hidden = false;
+
+    let orderDates = res.map(r => r.orderMs).filter(v => v !== null);
+    if (!orderDates.length) orderDates = res.map(r => r.created).filter(v => v !== null);
+    if (orderDates.length) {
+      document.getElementById('period').textContent =
+        `Pedidos del ${fmtDay(Math.min(...orderDates))} al ${fmtDay(Math.max(...orderDates))}. Promesa tomada del mensaje de despacho que vio el cliente.`;
+    }
+
+    const lateN = evals.length - ok;
+    document.getElementById('k-total').textContent = res.length;
+    document.getElementById('k-med').textContent = evals.length;
+    document.getElementById('k-ok').textContent = ok;
+    document.getElementById('k-late').textContent = lateN;
+    document.getElementById('k-ex').textContent = ex.length;
+    document.getElementById('g-pct').textContent = evals.length ? Math.round(ok / evals.length * 100) + '%' : '—';
+    document.getElementById('g-text').textContent = evals.length
+      ? `Cumplimiento de promesa: ${ok} de ${evals.length} pedidos medidos llegaron antes de la hora prometida al cliente.`
+      : 'No hay pedidos evaluables con promesa “Pide ahora”.';
+    const reasons = {};
+    const label = (r, n) => r.reason.startsWith('Cancelado') ? (n === 1 ? 'cancelado' : 'cancelados')
+      : r.reason.startsWith('Sin promesa') ? 'sin promesa “Pide ahora”'
+      : r.reason.startsWith('No está') ? 'sin cruce con el reporte utilitario'
+      : r.reason.toLowerCase();
+    ex.forEach(r => { const k = label(r, 2); reasons[k] = reasons[k] || { r, n: 0 }; reasons[k].n++; });
+    document.getElementById('g-excluded').textContent = ex.length
+      ? `Quedan fuera del cálculo ${ex.length} pedido${ex.length > 1 ? 's' : ''}: ` + Object.values(reasons).map(({ r, n }) => `${n} ${label(r, n)}`).join(', ') + '. Están en el detalle.'
+      : '';
+
+    // eje
+    document.getElementById('axis').innerHTML = TICKS.map(([d, l]) => `<span style="left:${xPct(d)}%">${l}</span>`).join('');
+
+    // tiendas
+    const stores = [...new Set(res.map(r => r.store))];
+    const st = stores.map(name => {
+      const rows = res.filter(r => r.store === name);
+      const ev = rows.filter(r => r.result !== 'ex');
+      const okN = ev.filter(r => r.result === 'ok').length;
+      const late = ev.filter(r => r.result === 'late');
+      return {
+        name, rows, ev, okN,
+        pct: ev.length ? okN / ev.length : null,
+        tomaMed: median(ev.filter(r => r.toma !== null && !/recibe\s+ma(n|ñ)ana/i.test(r.desc)).map(r => r.toma)),
+        lateMed: median(late.map(r => r.diff)),
+        exN: rows.length - ev.length
+      };
+    }).sort((a, b) => b.ev.length - a.ev.length || a.name.localeCompare(b.name));
+
+    document.getElementById('stores').innerHTML = st.map(s => {
+      const ticks = TICKS.filter(t => t[0] !== 0).map(([d]) => `<span class="tick" style="left:${xPct(d)}%"></span>`).join('');
+      const placed = [];
+      const dots = [...s.ev].sort((a, b) => a.diff - b.diff).map(r => {
+        const x = xPct(r.diff);
+        const near = placed.filter(p => Math.abs(p - x) < 1.6).length;
+        placed.push(x);
+        const dy = near ? (near % 2 ? -1 : 1) * Math.ceil(near / 2) * 9 : 0;
+        const clamped = r.diff > MAX_D || r.diff < MIN_D;
+        const tip = `Pedido ${r.code}: ${r.result === 'ok' ? 'llegó ' + fmtDur(-r.diff) + ' antes' : (r.delivered === null ? 'sin entregar, ' : 'llegó ') + fmtDur(r.diff) + ' tarde'}`;
+        return `<span class="dot ${r.result}${clamped ? ' clamped' : ''}" style="left:${x}%;margin-top:${dy}px" title="${esc(tip)}" aria-label="${esc(tip)}"></span>`;
+      }).join('');
+      const stats = s.ev.length
+        ? `<span>A tiempo: <b>${s.okN}</b></span><span>Atrasados: <b>${s.ev.length - s.okN}</b></span><span>Medidos: <b>${s.ev.length}</b></span>` +
+          `<span>Toma en tienda, pedidos “hoy” (mediana): <b>${fmtDur(s.tomaMed)}</b></span>` +
+          (s.lateMed !== null ? `<span>Atraso mediano cuando falla: <b>${fmtDur(s.lateMed)}</b></span>` : '') +
+          (s.exN ? `<span>${s.exN} excluido${s.exN > 1 ? 's' : ''}</span>` : '')
+        : `<span>${s.rows.length} pedido${s.rows.length > 1 ? 's' : ''}, ninguno evaluable (${esc([...new Set(s.rows.map(r => r.reason.split(':')[0]))].join(', ').toLowerCase())})</span>`;
+      return `<div class="store grid">
+        <div class="name">${esc(s.name)}</div>
+        <div class="pct${s.pct === null ? ' none' : ''}">${s.pct === null ? 'Sin datos' : Math.round(s.pct * 100) + '%'}</div>
+        <div class="strip">${ticks}<span class="zero" style="left:${xPct(0)}%"></span>${dots}</div>
+        <div class="stats">${stats}</div>
+      </div>`;
+    }).join('');
+
+    // tabla resumen
+    const pctTxt = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+    const barHtml = (a, b) => b ? `<span class="bar"><i style="width:${a / b * 100}%"></i></span>${pctTxt(a, b)}` : '<span class="muted">Sin datos</span>';
+    document.getElementById('sum-rows').innerHTML = st.map(s => `<tr>
+      <td>${esc(s.name)}</td><td class="num">${s.rows.length}</td><td class="num">${s.ev.length}</td>
+      <td class="num">${s.okN}</td><td class="num">${s.ev.length - s.okN}</td>
+      <td>${barHtml(s.okN, s.ev.length)}</td>
+      <td class="num">${fmtDur(s.lateMed)}</td><td class="num">${fmtDur(s.tomaMed)}</td><td class="num">${s.exN}</td>
+    </tr>`).join('');
+    const allLate = evals.filter(r => r.result === 'late').map(r => r.diff);
+    const allToma = evals.filter(r => r.toma !== null && !/recibe\s+ma(n|ñ)ana/i.test(r.desc)).map(r => r.toma);
+    document.getElementById('sum-foot').innerHTML = `<tr>
+      <td>Total</td><td class="num">${res.length}</td><td class="num">${evals.length}</td>
+      <td class="num">${ok}</td><td class="num">${lateN}</td><td>${barHtml(ok, evals.length)}</td>
+      <td class="num">${fmtDur(median(allLate))}</td><td class="num">${fmtDur(median(allToma))}</td><td class="num">${ex.length}</td>
+    </tr>`;
+
+    const sel = document.getElementById('f-store');
+    sel.innerHTML = '<option value="all">Todas</option>' + st.map(s => `<option>${esc(s.name)}</option>`).join('');
+    renderTable();
+  }
+
+  function filtered() {
+    const s = document.getElementById('f-store').value, r = document.getElementById('f-status').value;
+    return state.results
+      .filter(x => (s === 'all' || x.store === s) && (r === 'all' || x.result === r))
+      .sort((a, b) => (b.promise ?? b.created ?? 0) - (a.promise ?? a.created ?? 0));
+  }
+
+  const resultText = r => r.result === 'ok' ? 'A tiempo' : r.result === 'late' ? (r.delivered === null ? 'Atrasado, sin entregar' : 'Atrasado') : r.reason;
+
+  function renderTable() {
+    const rows = filtered();
+    document.getElementById('rows').innerHTML = rows.length ? rows.map(r => `<tr>
+      <td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.code)}</a>` : esc(r.code)}</td>
+      <td>${esc(r.store)}</td><td>${esc(r.comuna)}</td>
+      <td>${fmtDT(r.orderMs)}</td><td>${fmtDT(r.created)}${r.toma !== null ? ` <span class="muted">(${fmtDur(r.toma)})</span>` : ''}</td>
+      <td>${fmtDT(r.promise)}</td><td>${fmtDT(r.delivered)}</td>
+      <td class="num">${r.diff !== null ? fmtDur(r.diff, true) : '—'}</td>
+      <td><span class="tag ${r.result}">${esc(resultText(r))}</span></td>
+    </tr>`).join('') : '<tr><td colspan="9" class="muted">No hay pedidos con estos filtros.</td></tr>';
+  }
+
+  function exportCSV() {
+    const head = ['Pedido', 'Tienda', 'Comuna', 'Compra', 'Creado en Flapp', 'Toma en tienda (min)', 'Despacho', 'Promesa', 'Entrega', 'Diferencia (min)', 'Resultado'];
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [head.map(q).join(',')].concat(filtered().map(r => [
+      r.code, r.store, r.comuna, fmtDT(r.orderMs), fmtDT(r.created), r.toma !== null ? Math.round(r.toma) : '',
+      r.desc, fmtDT(r.promise), fmtDT(r.delivered), r.diff !== null ? Math.round(r.diff) : '', resultText(r)
+    ].map(q).join(',')));
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cumplimiento_flapp.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---------- eventos ----------
+  [['flapp', 'in-flapp', 'drop-flapp'], ['util', 'in-util', 'drop-util']].forEach(([kind, inId, boxId]) => {
+    const input = document.getElementById(inId), box = document.getElementById(boxId);
+    input.addEventListener('change', () => input.files.length && loadFiles(kind, input.files));
+    ['dragenter', 'dragover'].forEach(ev => box.addEventListener(ev, e => { e.preventDefault(); box.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => box.addEventListener(ev, () => box.classList.remove('over')));
+    box.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files.length) loadFiles(kind, e.dataTransfer.files); });
+  });
+  document.getElementById('f-store').addEventListener('change', renderTable);
+  document.getElementById('f-status').addEventListener('change', renderTable);
+  document.getElementById('export').addEventListener('click', exportCSV);
+})();
+</script>
+</body>
+</html>
